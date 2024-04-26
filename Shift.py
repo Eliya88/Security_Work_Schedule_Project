@@ -14,8 +14,8 @@ class Shift:
 
         # initial shifts to False
         for day in range(7):
-            for shift_type in range(3):
-                temp = pd.DataFrame({'day': day, 'shift': shift_type, 'is_assigned': False}, index=[0])
+            for shift in range(3):
+                temp = pd.DataFrame({'day': day, 'shift': shift, 'is_assigned': False}, index=[0])
                 self.__shifts_df = pd.concat([self.__shifts_df, temp], ignore_index=True)
 
     def assign(self, day, shift):
@@ -68,3 +68,9 @@ class Shift:
         Returns the number of night shifts in the shifts DataFrame.
         """
         return self.__shifts_df[self.__shifts_df['shift'] == 2]['is_assigned'].sum()
+
+    def reset_all_shifts(self):
+        """
+        Reset all shifts to False.
+        """
+        self.__shifts_df['is_assigned'] = False

@@ -85,7 +85,20 @@ class SecurityDepartment:
         # Set the attributes of the guards
         self.set_guards_objects_list()
         self.set_data()
-        self.count_shifts()
+        # self.count_shifts()
+
+    def reset_data_structure(self):
+        """
+        Reset the data structure to the initial state.
+        """
+        self.employee_amount_in_shift = []
+        self.employee_amount_in_shift_noon = []
+        self.final_arrangement = {day: (set(), set(), set()) for day in range(7)}
+        self.warning_output = {day: (set(), set(), set()) for day in range(7)}
+
+        # Reset all employees shifts
+        for employee in self.guards_objects_list:
+            employee.reset_all_shifts()
 
     def set_guards_objects_list(self):
         """
@@ -203,8 +216,9 @@ class SecurityDepartment:
             num_of_employee = min_shift[2]
             can_work_list = [[], []]  # [officers, guards]
 
+            employye_list = list(self.dict_of_shifts[day][shift])
             for i in range(num_of_employee):
-                employee = list(self.dict_of_shifts[day][shift])[i]
+                employee = employye_list[i]
 
                 if self.filter_employees(employee, day, shift) is False:
                     continue
@@ -226,37 +240,13 @@ class SecurityDepartment:
             idx_of_shift += 1
 
         # self.optimize_assignment()
-        self.post_arrangement()
-        self.update_csv_file()
+        # self.update_csv_file()
+        return self.ready_arrangment()
 
-    def post_arrangement(self):
+    def post_arrangement(self, updates: dict):
         """
         Post the final arrangement on Google Sheets and warn about the shifts that are not optimal
         """
-        noon_shortages = {day: self.check_noon_shortage(day) for day in range(7)}  # Pre-compute noon shortages
-
-        # Iterate over all the shifts and days
-        updates = {}
-        for shift in range(3):  # Shifts
-            for day in range(7):  # Days
-                shift_employees = []  # Employyes in the shift to be added
-                # Add the employees to the shift
-                for employee in self.final_arrangement[day][shift]:
-                    name_line = employee.get_name()
-                    # Try to fill the noon shift shortage with 12-hour shifts
-                    if shift == 0 and employee in noon_shortages[day][0]:  # Morning shift
-                        name_line += ' * 12 *'
-
-                    elif shift == 2 and employee in noon_shortages[day][1]:  # Night shift
-                        name_line += ' * 12 *'
-
-                    shift_employees.append(name_line + '\n')
-
-                # Add the warning output to the shift employees
-                shift_employees.append(list(self.warning_output[day][shift])[0])
-                # Combine the employees in the shift into a string
-                updates[(shift, day)] = ''.join(shift_employees)
-
         # Batch update to Google Sheets
         try:
             for shift in range(3):
@@ -279,6 +269,60 @@ class SecurityDepartment:
 
         except requests.exceptions.RequestException as e:
             print(f"Error posting updates: {e}")
+
+    def ready_arrangment(self):
+        noon_shortages = {day: self.check_noon_shortage(day) for day in range(7)}  # Pre-compute noon shortages
+
+        # Iterate over all the shifts and days
+        updates = {}
+        shifts_with_12 = {day: [0, 0, 0] for day in range(7)}  # The number of 12-hour shifts in the shift
+        warnings_amount = 0
+        employee_shortness = 0
+
+        for shift in [0, 2, 1]:  # Shifts
+            for day in range(7):  # Days
+                count_12 = 0
+                shift_employees = []  # Employyes in the shift to be added
+                # Add the employees to the shift
+                for employee in self.final_arrangement[day][shift]:
+                    name_line = employee.get_name()
+                    # Try to fill the noon shift shortage with 12-hour shifts
+                    if shift == 0 and employee in noon_shortages[day][0]:  # Morning shift
+                        name_line += ' * 12 *'
+                        count_12 += 1
+
+                    elif shift == 2 and employee in noon_shortages[day][1]:  # Night shift
+                        name_line += ' * 12 *'
+                        count_12 += 1
+                    shift_employees.append(name_line + '\n')
+
+                # Update the number of 12-hour shifts in the shift
+                shifts_with_12[day][shift] = count_12
+
+                # Add the warning output to the shift employees
+                if shift == 1:
+                    e_in_shift = len(self.final_arrangement[day][1])
+                    if (e_in_shift + shifts_with_12[day][0] == 5) and (e_in_shift + shifts_with_12[day][2] == 5):
+                        shift_employees.append('')
+                    else:
+                        shift_employees.append(list(self.warning_output[day][shift])[0])
+
+                elif shift != 1:
+                    shift_employees.append(list(self.warning_output[day][shift])[0])
+
+                if list(self.warning_output[day][shift])[0] != '':
+                    warnings_amount += 1
+                # -----------------------------------------------------
+                if shift != 1:
+                    employee_shortness += (5 - len(self.final_arrangement[day][shift]))
+                if shift == 1:
+                    employee_shortness += (5 - len(self.final_arrangement[day][1]) -
+                                           min(shifts_with_12[day][0], shifts_with_12[day][2]))
+                # -----------------------------------------------------
+
+                # Combine the employees in the shift into a string
+                updates[(shift, day)] = ''.join(shift_employees)
+        return updates, employee_shortness, warnings_amount
 
     def filter_employees(self, employee, day, shift):
         """
@@ -344,10 +388,10 @@ class SecurityDepartment:
         # Sort the employees by the number of optimal shifts they want to work, Shuffle the list before sorting to avoid
         # the same order of the employees as they registered in the sheets document
         shuffle(employees_list[0])
-        officers_list = sorted(employees_list[0], reverse=True)
+        officers_list = employees_list[0]
 
         shuffle(employees_list[1])
-        guards_list = sorted(employees_list[1], reverse=True)
+        guards_list = employees_list[1]
 
         # The Warning output of the method
         warning_output = ""
@@ -418,16 +462,20 @@ class SecurityDepartment:
             warning_output += "* No Officers *\n"
             return warning_output
 
-        if ((len(self.final_arrangement[day][shift]) < 5 and day != 6 and shift != 0) or
-                (len(self.final_arrangement[day][shift]) < 4)):
-            warning_output += "* Lack of Employees *\n"
-            return warning_output
+        if day == 6 and shift == 0:
+            if len(self.final_arrangement[day][shift]) < 4:
+                warning_output += "* Lack of Employees *\n"
+                return warning_output
+        else:
+            if len(self.final_arrangement[day][shift]) < 5:
+                warning_output += "* Lack of Employees *\n"
+                return warning_output
 
         if count_drivers < 2:
             warning_output += "* No Enough Drivers *\n"
             return warning_output
 
-        if count_height_permissions < 1:
+        if count_height_permissions < 2:
             warning_output += "* No Enough Height permissions *\n"
             return warning_output
 
@@ -482,127 +530,127 @@ class SecurityDepartment:
 
         return replacements
 
-    def optimize_assignment(self):
-        """
-        This method optimizes the assignment of the shifts. It finds the employees who didn't get all the shifts they
-        want and replace them with employees who got the shift they want but can work in another shift.
-        Algorithm:
-        1. Iterate over all the employees and find the employee who didn't get all the shifts he wants. (employee_1)
-        2. Iterate over all the shifts the employee_1 wants, and find a shift that he can work in but didn't get.
-           - If the shift is not full: continue.
-           - If the shift is full:
-                1. Iterate over all the employees in the shift. For each employee, find a shift that
-                the employee wants
-                   to work in but didn't get.(employee_2)
-                2. - If the shift is full: continue.
-                   - If the shift is not full:
-                        1. Remove employee_2 from the original shift.
-                        2. Add the employee_2 to the new shift.
-                        3. Add the employee_1 to the original shift.
-        """
-        # Iterate over all employeess.
-        for employee in self.guards_objects_list:
-
-            # Find an employee who didn't get the number of shifts he wants's
-            if employee.get_num_of_current_shifts() < employee.get_num_of_optimal_shifts():
-
-                # Iterate over all the shifts, to get the shift the employee wants but didn't get
-                for day in self.dict_of_shifts.keys():
-                    for shift in range(3):
-                        full_shift = self.final_arrangement[day][shift]
-
-                        # Check if the employee can work in the shift, and he wants to work in the shift
-                        if self.optimizer_helper(employee, day, shift, len(full_shift), "equal"):
-                            print(f"Employee {employee.get_name()} didn't get the shift he wants in"
-                                  f" day {day} shift {shift}")  # Debugging
-
-                            employee_to_remove = None
-                            day_to_append = 0
-                            shift_to_append = 0
-                            # Find emplyee in the full shift to replace with the employee who didn't get the shift
-                            for employee_in_shift in full_shift:
-
-                                # Find a shift that the employee can work in but didn't get
-                                for day1 in self.dict_of_shifts.keys():
-                                    for shift1 in range(3):
-                                        full_shift1 = self.final_arrangement[day1][shift1]
-                                        # Check if the employee can work in the shift, and he wants to work in the shift
-                                        if self.optimizer_helper(employee_in_shift, day1, shift1, len(full_shift1),
-                                                                 "greater"):
-                                            print(f"Employee {employee_in_shift.get_name()} can work in day {day1} "
-                                                  f"shift {shift1}")  # Debugging
-                                            # Save the employee to remove and the day and shift to append
-                                            employee_to_remove = employee_in_shift
-                                            day_to_append = day1
-                                            shift_to_append = shift1
-                                            break
-
-                            # Replace the employees
-                            if employee_to_remove is not None:
-                                # Print the replacement for debugging
-                                print(f"Employee {employee_to_remove.get_name()} is replaced with "
-                                      f"{employee.get_name()}. from: {day_name(day)}, {shift_name(day)}, to:"
-                                      f" {day_name(day_to_append)}, {shift_name(shift_to_append)}")
-
-                                # Remove the second employee from the original shift
-                                self.final_arrangement[day][shift].remove(employee_to_remove)
-                                employee_to_remove.delete_shift(day, shift)
-
-                                # Add the second employee to the new shift
-                                self.final_arrangement[day_to_append][shift_to_append].add(employee_to_remove)
-                                employee_to_remove.add_shift(day_to_append, shift_to_append)
-
-                                # Add the employee to the original shift
-                                self.final_arrangement[day][shift].add(employee)
-                                employee.add_shift(day, shift)
-
-    def optimizer_helper(self, employee, day: int, shift: int, shift_len: int, sign: str):
-        """
-        Helper function for the optimizer. Check if the employee can work in the shift.
-        :param employee: Employee object to be checked
-        :param day: The day in number
-        :param shift: The shift in number
-        :param shift_len: The number of employees in the shift
-        :param sign: The sign of the comparison
-        :return: True if the employee can work in the shift, False otherwise
-        """
-        # Calculate the full shift amount
-        full_shift_calc = self.MAX_EMPLOYEE_PER_SHIFT - shift_len
-
-        # Shabat morning need one less employee
-        if day == 6 and shift == 0:
-            full_shift_calc -= 1
-
-        # Check if the employee can work in the shift
-        if employee in self.dict_of_shifts[day][shift] and employee.get_shift(day, shift) is False:
-
-            if sign == "equal":
-                # Check if the shift is full or not
-                if full_shift_calc == 0:
-                    # Check if the employee can work in the shift
-                    if self.filter_employees(employee, day, shift):
-                        return True
-
-            elif sign == "greater":
-                # The employee passed the maximum shabat shifts amount
-                if (day == 5 and shift != 0) or (day == 6 and shift != 2):
-                    if employee.get_shabat_counter() > self.MAX_SHABAT_SHIFTS - 1:
-                        return False
-
-                # Varify that the employee dont work in this day
-                if shift == 0:
-                    if (employee.get_shift(day, 1) or employee.get_shift(day, 2) or
-                            (day != 0 and employee.get_shift(day - 1, 2))):
-                        return False
-                elif shift == 1:
-                    if employee.get_shift(day, 0) or employee.get_shift(day, 2):
-                        return False
-                elif shift == 2:
-                    if (employee.get_shift(day, 0) or employee.get_shift(day, 1) or
-                            (day != 6 and employee.get_shift(day + 1, 0))):
-                        return False
-
-                # Verify that the shift is not full
-                if full_shift_calc > 0:
-                    return True
-        return False
+    # def optimize_assignment(self):
+    #     """
+    #     This method optimizes the assignment of the shifts. It finds the employees who didn't get all the shifts they
+    #     want and replace them with employees who got the shift they want but can work in another shift.
+    #     Algorithm:
+    #     1. Iterate over all the employees and find the employee who didn't get all the shifts he wants. (employee_1)
+    #     2. Iterate over all the shifts the employee_1 wants, and find a shift that he can work in but didn't get.
+    #        - If the shift is not full: continue.
+    #        - If the shift is full:
+    #             1. Iterate over all the employees in the shift. For each employee, find a shift that
+    #             the employee wants
+    #                to work in but didn't get.(employee_2)
+    #             2. - If the shift is full: continue.
+    #                - If the shift is not full:
+    #                     1. Remove employee_2 from the original shift.
+    #                     2. Add the employee_2 to the new shift.
+    #                     3. Add the employee_1 to the original shift.
+    #     """
+    #     # Iterate over all employeess.
+    #     for employee in self.guards_objects_list:
+    #
+    #         # Find an employee who didn't get the number of shifts he wants's
+    #         if employee.get_num_of_current_shifts() < employee.get_num_of_optimal_shifts():
+    #
+    #             # Iterate over all the shifts, to get the shift the employee wants but didn't get
+    #             for day in self.dict_of_shifts.keys():
+    #                 for shift in range(3):
+    #                     full_shift = self.final_arrangement[day][shift]
+    #
+    #                     # Check if the employee can work in the shift, and he wants to work in the shift
+    #                     if self.optimizer_helper(employee, day, shift, len(full_shift), "equal"):
+    #                         print(f"Employee {employee.get_name()} didn't get the shift he wants in"
+    #                               f" day {day} shift {shift}")  # Debugging
+    #
+    #                         employee_to_remove = None
+    #                         day_to_append = 0
+    #                         shift_to_append = 0
+    #                         # Find emplyee in the full shift to replace with the employee who didn't get the shift
+    #                         for employee_in_shift in full_shift:
+    #
+    #                             # Find a shift that the employee can work in but didn't get
+    #                             for day1 in self.dict_of_shifts.keys():
+    #                                 for shift1 in range(3):
+    #                                     full_shift1 = self.final_arrangement[day1][shift1]
+    #                                     # Check if the employee can work in the shift, and he wants to work in the shift
+    #                                     if self.optimizer_helper(employee_in_shift, day1, shift1, len(full_shift1),
+    #                                                              "greater"):
+    #                                         print(f"Employee {employee_in_shift.get_name()} can work in day {day1} "
+    #                                               f"shift {shift1}")  # Debugging
+    #                                         # Save the employee to remove and the day and shift to append
+    #                                         employee_to_remove = employee_in_shift
+    #                                         day_to_append = day1
+    #                                         shift_to_append = shift1
+    #                                         break
+    #
+    #                         # Replace the employees
+    #                         if employee_to_remove is not None:
+    #                             # Print the replacement for debugging
+    #                             print(f"Employee {employee_to_remove.get_name()} is replaced with "
+    #                                   f"{employee.get_name()}. from: {day_name(day)}, {shift_name(day)}, to:"
+    #                                   f" {day_name(day_to_append)}, {shift_name(shift_to_append)}")
+    #
+    #                             # Remove the second employee from the original shift
+    #                             self.final_arrangement[day][shift].remove(employee_to_remove)
+    #                             employee_to_remove.delete_shift(day, shift)
+    #
+    #                             # Add the second employee to the new shift
+    #                             self.final_arrangement[day_to_append][shift_to_append].add(employee_to_remove)
+    #                             employee_to_remove.add_shift(day_to_append, shift_to_append)
+    #
+    #                             # Add the employee to the original shift
+    #                             self.final_arrangement[day][shift].add(employee)
+    #                             employee.add_shift(day, shift)
+    #
+    # def optimizer_helper(self, employee, day: int, shift: int, shift_len: int, sign: str):
+    #     """
+    #     Helper function for the optimizer. Check if the employee can work in the shift.
+    #     :param employee: Employee object to be checked
+    #     :param day: The day in number
+    #     :param shift: The shift in number
+    #     :param shift_len: The number of employees in the shift
+    #     :param sign: The sign of the comparison
+    #     :return: True if the employee can work in the shift, False otherwise
+    #     """
+    #     # Calculate the full shift amount
+    #     full_shift_calc = self.MAX_EMPLOYEE_PER_SHIFT - shift_len
+    #
+    #     # Shabat morning need one less employee
+    #     if day == 6 and shift == 0:
+    #         full_shift_calc -= 1
+    #
+    #     # Check if the employee can work in the shift
+    #     if employee in self.dict_of_shifts[day][shift] and employee.get_shift(day, shift) is False:
+    #
+    #         if sign == "equal":
+    #             # Check if the shift is full or not
+    #             if full_shift_calc == 0:
+    #                 # Check if the employee can work in the shift
+    #                 if self.filter_employees(employee, day, shift):
+    #                     return True
+    #
+    #         elif sign == "greater":
+    #             # The employee passed the maximum shabat shifts amount
+    #             if (day == 5 and shift != 0) or (day == 6 and shift != 2):
+    #                 if employee.get_shabat_counter() > self.MAX_SHABAT_SHIFTS - 1:
+    #                     return False
+    #
+    #             # Varify that the employee dont work in this day
+    #             if shift == 0:
+    #                 if (employee.get_shift(day, 1) or employee.get_shift(day, 2) or
+    #                         (day != 0 and employee.get_shift(day - 1, 2))):
+    #                     return False
+    #             elif shift == 1:
+    #                 if employee.get_shift(day, 0) or employee.get_shift(day, 2):
+    #                     return False
+    #             elif shift == 2:
+    #                 if (employee.get_shift(day, 0) or employee.get_shift(day, 1) or
+    #                         (day != 6 and employee.get_shift(day + 1, 0))):
+    #                     return False
+    #
+    #             # Verify that the shift is not full
+    #             if full_shift_calc > 0:
+    #                 return True
+    #     return False

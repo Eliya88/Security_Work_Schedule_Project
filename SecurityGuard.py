@@ -33,9 +33,9 @@ class SecurityGuard:
         self.__optimal_num_of_shifts = 0  # How many shifts the employee wants to work, initial from a sheets document
         self.__shifts = Shift()  # Object of the class Shift that represents the shifts of the guard in the week.
 
-    def __lt__(self, other):
-        """ This method is used for sorting the guards by their optimal number of shifts."""
-        return self.__optimal_num_of_shifts < other.get_num_of_optimal_shifts()
+    def reset_all_shifts(self):
+        """ This method resets all the shifts of the guard."""
+        self.__shifts.reset_all_shifts()
 
     def add_shift(self, day, shift):
         """ This method adds a shift to the guard using the attribute self.shifts.
@@ -58,6 +58,8 @@ class SecurityGuard:
         """ This method set the optimal amounts of shifts the guard wants to work this week."""
         if 0 <= num <= 6:
             self.__optimal_num_of_shifts = num
+        elif num > 6:
+            self.__optimal_num_of_shifts = 6
 
     def get_num_of_optimal_shifts(self):
         """ This method returns the optimal amounts of shifts the guard wants to work this week."""
