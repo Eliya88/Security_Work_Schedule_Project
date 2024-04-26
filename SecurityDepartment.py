@@ -22,20 +22,8 @@ def day_name(day):
     :param day: The day in number
     :return: The day name
     """
-    if day == 0:
-        return 'sunday'
-    elif day == 1:
-        return 'monday'
-    elif day == 2:
-        return 'tuesday'
-    elif day == 3:
-        return 'wednesday'
-    elif day == 4:
-        return 'thursday'
-    elif day == 5:
-        return 'friday'
-    elif day == 6:
-        return 'saturday'
+    days_dict = {0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'}
+    return days_dict[day]
 
 
 def shift_name(shift):
@@ -44,12 +32,8 @@ def shift_name(shift):
     :param shift: The shift in number
     :return: The shift name
     """
-    if shift == 0:
-        return 'Morning'
-    elif shift == 1:
-        return 'Evening'
-    elif shift == 2:
-        return 'Night'
+    shifts_dict = {0: 'Morning', 1: 'Evening', 2: 'Night'}
+    return shifts_dict[shift]
 
 
 class SecurityDepartment:
@@ -65,31 +49,28 @@ class SecurityDepartment:
         self.MAX_NIGHTS_SHIFTS = 7
         self.MAX_SHABAT_SHIFTS = 3
         self.MAX_EMPLOYEE_PER_SHIFT = 5
+        # Environment variables for the API
         self.ENDPOINT_GET_DATA = os.getenv('ENDPOINT_GET')
         self.TOKEN_GET = os.getenv('TOKEN_GET')
         self.ENDPOINT_UPLOAD_DATA = os.getenv('ENDPOINT_PUT')
         self.TOKEN_PUT = os.getenv('TOKEN_PUT')
 
-        # List of all the guards in the department, initialized in the method 'set_guards_objects_list'
-        self.guards_objects_list = []
+        # Set of all the guards in the department, initialized in the method 'set_guards_objects_list'
+        self.guards_objects_list = set()
 
         # Number of employees per shift. Initialized in the method 'count_shifts'
         self.employee_amount_in_shift = []
         self.employee_amount_in_shift_noon = []
 
-        # Collect all information from Google sheets data, store it by shifts.
-        self.dict_of_shifts = {
-            0: ([], [], []), 1: ([], [], []), 2: ([], [], []), 3: ([], [], []),
-            4: ([], [], []), 5: ([], [], []), 6: ([], [], [])
-        }
+        # Collect all information from Google sheets data, store it by shifts,
+        # each set contains the employees in the shift.
+        self.dict_of_shifts = {day: (set(), set(), set()) for day in range(7)}
 
         # The final arrangement of the shifts
-        self.final_arrangement = {0: ([], [], []), 1: ([], [], []), 2: ([], [], []), 3: ([], [], []),
-                                  4: ([], [], []), 5: ([], [], []), 6: ([], [], [])}
+        self.final_arrangement = {day: (set(), set(), set()) for day in range(7)}
 
         # The warning output of the shifts
-        self.warning_output = {0: ([], [], []), 1: ([], [], []), 2: ([], [], []), 3: ([], [], []),
-                               4: ([], [], []), 5: ([], [], []), 6: ([], [], [])}
+        self.warning_output = {day: (set(), set(), set()) for day in range(7)}
 
         try:
             # Read the data from Google sheets using Sheety API
@@ -119,7 +100,7 @@ class SecurityDepartment:
 
         # Create a list of objects with the guards in the department
         for i in range(len(df)):
-            self.guards_objects_list.append(
+            self.guards_objects_list.add(
                 SecurityGuard.SecurityGuard(
                     name=str(df['E_Name'].iloc[i]).strip(),
                     id_number=int(df['eID'].iloc[i]),
@@ -165,7 +146,7 @@ class SecurityDepartment:
                 # The employee opens the shift
                 if val != '' and type(val) is not int:  # We expected an 'X' or an empty string
                     # Add the employee to the dictionary by day and shift
-                    self.dict_of_shifts[day][shift].append(employee)
+                    self.dict_of_shifts[day][shift].add(employee)
 
                 # Set how many shifts the employee want to work this week
                 elif type(val) is int and 0 <= val <= 6:
@@ -223,7 +204,7 @@ class SecurityDepartment:
             can_work_list = [[], []]  # [officers, guards]
 
             for i in range(num_of_employee):
-                employee = self.dict_of_shifts[day][shift][i]
+                employee = list(self.dict_of_shifts[day][shift])[i]
 
                 if self.filter_employees(employee, day, shift) is False:
                     continue
@@ -237,9 +218,9 @@ class SecurityDepartment:
             # Assign the shift and get the warning output
             warning = self.assign_shift(can_work_list, day, shift)
             if warning is not None:
-                self.warning_output[day][shift].append(warning)
+                self.warning_output[day][shift].add(warning)
             else:
-                self.warning_output[day][shift].append("")
+                self.warning_output[day][shift].add("")
 
             # Update the number of shifts
             idx_of_shift += 1
@@ -247,6 +228,57 @@ class SecurityDepartment:
         # self.optimize_assignment()
         self.post_arrangement()
         self.update_csv_file()
+
+    def post_arrangement(self):
+        """
+        Post the final arrangement on Google Sheets and warn about the shifts that are not optimal
+        """
+        noon_shortages = {day: self.check_noon_shortage(day) for day in range(7)}  # Pre-compute noon shortages
+
+        # Iterate over all the shifts and days
+        updates = {}
+        for shift in range(3):  # Shifts
+            for day in range(7):  # Days
+                shift_employees = []  # Employyes in the shift to be added
+                # Add the employees to the shift
+                for employee in self.final_arrangement[day][shift]:
+                    name_line = employee.get_name()
+                    # Try to fill the noon shift shortage with 12-hour shifts
+                    if shift == 0 and employee in noon_shortages[day][0]:  # Morning shift
+                        name_line += ' * 12 *'
+
+                    elif shift == 2 and employee in noon_shortages[day][1]:  # Night shift
+                        name_line += ' * 12 *'
+
+                    shift_employees.append(name_line + '\n')
+
+                # Add the warning output to the shift employees
+                shift_employees.append(list(self.warning_output[day][shift])[0])
+                # Combine the employees in the shift into a string
+                updates[(shift, day)] = ''.join(shift_employees)
+
+        # Batch update to Google Sheets
+        try:
+            for shift in range(3):
+                sheet_params = {
+                    'chart1': {
+                        'shift': shift_name(shift),
+                        'sunday': updates.get((shift, 0)),
+                        'monday': updates.get((shift, 1)),
+                        'tuesday': updates.get((shift, 2)),
+                        'wednesday': updates.get((shift, 3)),
+                        'thursday': updates.get((shift, 4)),
+                        'friday': updates.get((shift, 5)),
+                        'saturday': updates.get((shift, 6))
+                    }
+                }
+                response = requests.put(url=f"{self.ENDPOINT_UPLOAD_DATA}/{shift + 2}", json=sheet_params,
+                                        headers={"Authorization": f"Bearer {self.TOKEN_PUT}"})
+                response.raise_for_status()
+                response.close()
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error posting updates: {e}")
 
     def filter_employees(self, employee, day, shift):
         """
@@ -261,8 +293,9 @@ class SecurityDepartment:
         """
 
         # The employee passed the maximum shabat shifts amount
-        if (day == 5 and shift != 0) or (day == 6 and shift != 2):
-            if employee.get_shabat_counter() > self.MAX_SHABAT_SHIFTS - 1:
+        shabat_conditions = {(5, 1), (5, 2), (6, 0), (6, 1)}
+        if (day, shift) in shabat_conditions:
+            if employee.get_shabat_counter() >= self.MAX_SHABAT_SHIFTS:
                 return False
 
         # Morning shift
@@ -293,9 +326,10 @@ class SecurityDepartment:
             return False
 
         # The employee passed the maximum work hours amount
-        if employee.get_num_of_current_shifts() > self.MAX_SHIFTS - 1:
+        if employee.get_num_of_current_shifts() >= self.MAX_SHIFTS:
             return False
 
+        # All the conditions are met
         return True
 
     def assign_shift(self, employees_list, day, shift):
@@ -327,13 +361,13 @@ class SecurityDepartment:
             officers_list[1].add_shift(day, shift)
 
             # Add the officers to the shift in the final arrangement
-            self.final_arrangement[day][shift].append(officers_list[0])
-            self.final_arrangement[day][shift].append(officers_list[1])
+            self.final_arrangement[day][shift].add(officers_list[0])
+            self.final_arrangement[day][shift].add(officers_list[1])
 
         # Assign one officer to the shift if it is possible
         elif officers_amount == 1:
             officers_list[0].add_shift(day, shift)
-            self.final_arrangement[day][shift].append(officers_list[0])
+            self.final_arrangement[day][shift].add(officers_list[0])
 
         # Officers hava drive permission and height permission
         count_drivers = len(self.final_arrangement[day][shift])
@@ -351,7 +385,7 @@ class SecurityDepartment:
 
             # Add the employee to the shift
             employee.add_shift(day, shift)
-            self.final_arrangement[day][shift].append(employee)
+            self.final_arrangement[day][shift].add(employee)
 
             # Update the counters
             if employee.is_allowed_to_drive():
@@ -375,7 +409,7 @@ class SecurityDepartment:
                 for i in range(2, condition):
                     employee = officers_list[i]
                     employee.add_shift(day, shift)
-                    self.final_arrangement[day][shift].append(employee)
+                    self.final_arrangement[day][shift].add(employee)
                     count_drivers += 1
                     count_height_permissions += 1
 
@@ -396,60 +430,6 @@ class SecurityDepartment:
         if count_height_permissions < 1:
             warning_output += "* No Enough Height permissions *\n"
             return warning_output
-
-    def post_arrangement(self):
-        """
-         Post the final arrangement on Google Sheets and warn about the shifts that are not optimal
-        """
-        # Iterate over all the shifts
-        for shift in range(3):
-            # For each shift, iterate over all the days
-            for day in range(7):
-                shift_employees = ''
-                for employee in self.final_arrangement[day][shift]:
-                    # Morning shift
-                    if shift == 0:
-                        # The employee can fill the noon shift shortage
-                        if employee in self.check_noon_shortage(day)[0]:
-                            shift_employees += employee.get_name() + ' * 12 *' + '\n'
-                        else:
-                            shift_employees += employee.get_name() + '\n'
-                    # Night shift
-                    elif shift == 2:
-                        # The employee can fill the noon shift shortage
-                        if employee in self.check_noon_shortage(day)[1]:
-                            shift_employees += employee.get_name() + ' * 12 *' + '\n'
-                        else:
-                            shift_employees += employee.get_name() + '\n'
-                    # Noon shift
-                    elif shift == 1:
-                        shift_employees += employee.get_name() + '\n'
-
-                # Add the warning output to the shift employees
-                if self.warning_output[day][shift][0] != "":
-                    shift_employees += self.warning_output[day][shift][0]
-                else:
-                    shift_employees += "* Shift Approved *\n"
-
-                # Update the Google sheets with the new information
-                sheet_params = {
-                    'chart1': {
-                        'shift': shift_name(shift),
-                        day_name(day): shift_employees
-                    }
-                }
-                try:
-                    # Make an API request to update the Google sheets
-                    response = requests.put(
-                        url=f"{self.ENDPOINT_UPLOAD_DATA}/{shift+2}",
-                        json=sheet_params,
-                        headers={"Authorization": f"Bearer {self.TOKEN_PUT}"}
-                    )
-                    response.raise_for_status()
-                    response.close()
-
-                except requests.exceptions.HTTPError as e:
-                    raise requests.exceptions.HTTPError(f"Error: {e}")
 
     def update_csv_file(self):
         """ Update the csv file with the new information """
@@ -479,7 +459,7 @@ class SecurityDepartment:
         missing_count = self.MAX_EMPLOYEE_PER_SHIFT - len(noon_shift)
 
         # Find potential replacements from morning (0) and night (2) shifts
-        replacements = [[], []]  # [morning, night]
+        replacements = ([], [])  # [morning, night]
 
         # Check if there are missing employees in the noon shift
         if missing_count > 0:
@@ -511,7 +491,8 @@ class SecurityDepartment:
         2. Iterate over all the shifts the employee_1 wants, and find a shift that he can work in but didn't get.
            - If the shift is not full: continue.
            - If the shift is full:
-                1. Iterate over all the employees in the shift. For each employee, find a shift that the employee wants
+                1. Iterate over all the employees in the shift. For each employee, find a shift that
+                the employee wants
                    to work in but didn't get.(employee_2)
                 2. - If the shift is full: continue.
                    - If the shift is not full:
@@ -568,11 +549,11 @@ class SecurityDepartment:
                                 employee_to_remove.delete_shift(day, shift)
 
                                 # Add the second employee to the new shift
-                                self.final_arrangement[day_to_append][shift_to_append].append(employee_to_remove)
+                                self.final_arrangement[day_to_append][shift_to_append].add(employee_to_remove)
                                 employee_to_remove.add_shift(day_to_append, shift_to_append)
 
                                 # Add the employee to the original shift
-                                self.final_arrangement[day][shift].append(employee)
+                                self.final_arrangement[day][shift].add(employee)
                                 employee.add_shift(day, shift)
 
     def optimizer_helper(self, employee, day: int, shift: int, shift_len: int, sign: str):
