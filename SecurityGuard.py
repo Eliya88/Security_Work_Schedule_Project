@@ -50,6 +50,10 @@ class SecurityGuard:
         if shift == 2:
             self.__nights_counter += 1
 
+    def reset_nigth_counter(self):
+        """ This method resets the night counter of the guard."""
+        self.__nights_counter = 0
+
     def get_shift(self, day, shift):
         """ This method return if the guard worked in the given day and shift."""
         return self.__shifts.get_shift(day, shift)

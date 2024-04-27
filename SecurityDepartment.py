@@ -16,14 +16,14 @@ def check_shift(employee, day, shift):
     return ""
 
 
-def day_name(day):
-    """
-    Convert the day number to the day name.
-    :param day: The day in number
-    :return: The day name
-    """
-    days_dict = {0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'}
-    return days_dict[day]
+# def day_name(day):
+#     """
+#     Convert the day number to the day name.
+#     :param day: The day in number
+#     :return: The day name
+#     """
+#     days_dict = {0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'}
+#     return days_dict[day]
 
 
 def shift_name(shift):
@@ -32,7 +32,7 @@ def shift_name(shift):
     :param shift: The shift in number
     :return: The shift name
     """
-    shifts_dict = {0: 'Morning', 1: 'Evening', 2: 'Night'}
+    shifts_dict = {0: 'בוקר', 1: 'צהריים', 2: 'לילה'}
     return shifts_dict[shift]
 
 
@@ -99,6 +99,7 @@ class SecurityDepartment:
         # Reset all employees shifts
         for employee in self.guards_objects_list:
             employee.reset_all_shifts()
+            employee.reset_nigth_counter()
 
     def set_guards_objects_list(self):
         """
@@ -253,13 +254,13 @@ class SecurityDepartment:
                 sheet_params = {
                     'chart1': {
                         'shift': shift_name(shift),
-                        'sunday': updates.get((shift, 0)),
-                        'monday': updates.get((shift, 1)),
-                        'tuesday': updates.get((shift, 2)),
-                        'wednesday': updates.get((shift, 3)),
-                        'thursday': updates.get((shift, 4)),
-                        'friday': updates.get((shift, 5)),
-                        'saturday': updates.get((shift, 6))
+                        'ראשון': updates.get((shift, 0)),
+                        'שני': updates.get((shift, 1)),
+                        'שלישי': updates.get((shift, 2)),
+                        'רביעי': updates.get((shift, 3)),
+                        'חמישי': updates.get((shift, 4)),
+                        'שישי': updates.get((shift, 5)),
+                        'שבת': updates.get((shift, 6))
                     }
                 }
                 response = requests.put(url=f"{self.ENDPOINT_UPLOAD_DATA}/{shift + 2}", json=sheet_params,
@@ -359,7 +360,9 @@ class SecurityDepartment:
                 return False
 
         # Night shift
-        elif shift == 2 and employee.get_nights_counter() < self.MAX_NIGHTS_SHIFTS:
+        elif shift == 2:
+            if employee.get_nights_counter() >= self.MAX_NIGHTS_SHIFTS:
+                return False
             # Need a rest of at least one shift
             if (employee.get_shift(day, 0) or employee.get_shift(day, 1) or
                     (day != 6 and employee.get_shift(day + 1, 0))):
