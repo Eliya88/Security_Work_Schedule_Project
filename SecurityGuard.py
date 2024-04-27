@@ -61,7 +61,7 @@ class SecurityGuard:
     def set_optimal_num_of_shifts(self, num):
         """ This method set the optimal amounts of shifts the guard wants to work this week."""
         if 0 <= num <= 6:
-            self.__optimal_num_of_shifts = num
+            self.__optimal_num_of_shifts = int(num)
         elif num > 6:
             self.__optimal_num_of_shifts = 6
 
