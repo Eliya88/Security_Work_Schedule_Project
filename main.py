@@ -2,17 +2,9 @@ from SecurityDepartment import SecurityDepartment
 import time
 
 
-# Do the work arrangement to be posted at:
-#
-
-if __name__ == '__main__':
-    start_time = time.time()
-
+def get_optimal(department):
     # Dictionary to store arrangements and their accuracy scores
     optimal = {}
-
-    # Create a SecurityDepartment object
-    department = SecurityDepartment()
 
     # Run the work arrangement N times and store the optimal arrangement
     for i in range(50):
@@ -36,8 +28,19 @@ if __name__ == '__main__':
     max_key = max(optimal.keys(), key=lambda x: x[0] + x[1])
     print(max_key)  # Debugging Purpose
 
+    return optimal[max_key]
+
+
+if __name__ == '__main__':
+    start_time = time.time()
+
+    # Create a SecurityDepartment object
+    security_department = SecurityDepartment()
+
+    optimal_arrangement = get_optimal(security_department)
+
     # Post the optimal arrangement
-    department.post_arrangement(optimal[max(optimal)])
+    security_department.post_arrangement(optimal_arrangement)
 
     end_time = time.time()
     print(end_time - start_time)  # Debugging Purpose
