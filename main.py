@@ -3,7 +3,7 @@ import time
 
 
 # Do the work arrangement to be posted at:
-# 'https://docs.google.com/spreadsheets/d/1gmsseO5a7PZqAWLaNdVcHx75z9TsiSvcx9u-JtiCh_0/edit#gid=0'
+#
 
 if __name__ == '__main__':
     start_time = time.time()

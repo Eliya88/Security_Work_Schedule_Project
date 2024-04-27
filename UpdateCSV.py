@@ -80,7 +80,3 @@ csv.reset_col_counter('Shabat_Night')
 
 # # Add new employee to the department
 # csv.add_new_employee(42350, 'רון פחימה', False, False, True, True, 0, 0)
-
-
-# df = pd.read_csv('employee_data.csv')
-# print(df.loc[df['eID'] == 42062, 'Shabat_Night'])
