@@ -125,19 +125,6 @@ class SecurityGuard:
 
         return self.__shabat_counter
 
-    def delete_shift(self, day, shift):
-        """ This method deletes a shift from the guard using the attribute self.shifts.
-            The method also updates the counters of the guard.
-        :param day: The day of the shift - integer between zero and 6 (0 - Sunday, 1 - Monday, etc.)
-        :param shift: The shift of the day - integer between 0 and 2 (0 - morning, 1 - evening, 2 - night)
-        """
-        # Unassign the shift
-        self.__shifts.unassign(day, shift)
-
-        # Update the night counter
-        if shift == 2:
-            self.__nights_counter -= 1
-
     def __str__(self):
         """ This method returns a string representation of the guard."""
         return self.__name

@@ -263,6 +263,17 @@ class SecurityDepartment:
             print(f"Error posting updates: {e}")
 
     def ready_arrangment(self):
+        """
+        Prepare the final arrangement to be posted on Google Sheets.
+        Setting a dictionary with each shift and day with the employees in the shift in a string format.
+        Makes two calculations of accuracy scores:
+        1. The total number of employees that are short from all the week.
+        2. The number of warnings from the week.
+        Meaning how many shifts are not optimal.
+        :return: Updates - The final arrangement to be posted on Google Sheets.
+        :return: Employee_shortness - The total number of employees that are short from all the week.
+        :return: Warnings_amount - The number of warnings from the week.
+        """
         noon_shortages = {day: self.check_noon_shortage(day) for day in range(7)}  # Pre-compute noon shortages
 
         # Iterate over all the shifts and days
@@ -493,7 +504,11 @@ class SecurityDepartment:
     def check_noon_shortage(self, day):
         """
         Checks for missing employees in the noon shift and finds replacements from morning and night shifts.
-        :param day: The day to check and update the shifts for.
+        :param: day: The day to check and update the shifts for.
+        :return: Replacements - The replacements for the missing
+        employees in the noon shift.
+        Meaning the employees from morning and from night shifts that do 12 hours
+        instead of 8.
         """
         # Get the noon shift
         noon_shift = self.final_arrangement[day][1]
